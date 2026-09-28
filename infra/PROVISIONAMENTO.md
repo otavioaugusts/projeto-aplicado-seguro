@@ -46,6 +46,7 @@ sudo bash projeto-aplicado-seguro/infra/provision.sh
 O script:
 
 - comenta `server_tokens` em `/etc/nginx/nginx.conf` (no 26.04 a linha é `server_tokens build;` e um segundo `server_tokens` em `conf.d` derruba o `nginx -t`) e apaga `/etc/nginx/conf.d/hardening.conf` se existir;
+- apaga `add_header Referrer-Policy` do site já instalado. Esse cabeçalho fica só no Flask (`same-origin`); `no-referrer` no Nginx faz o Chrome enviar `Origin: null` no login;
 - cria o usuário `deploy`, com sudo só para `systemctl restart projeto-aplicado`;
 - abre 22, 80 e 443 no UFW;
 - instala Fail2Ban (`maxretry` 4, `bantime` 24h) e o drop-in de SSH só por chave.

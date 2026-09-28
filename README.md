@@ -148,6 +148,7 @@ O Nginx de produção (`infra/nginx/projeto-aplicado.conf`):
 - `ssl_ecdh_curve X25519MLKEM768:X25519:secp384r1:prime256v1;`
 - cadeia completa em `fullchain.pem`;
 - HSTS de um ano, sem `preload` (preload é lista de domínio, e aqui o nome é um IP). O Nginx esconde o HSTS que o Flask também manda, para o cliente ver o cabeçalho uma vez;
+- `Referrer-Policy` não é repetido no Nginx. Quem define é o Flask, com `same-origin`. O `provision.sh` apaga um `add_header Referrer-Policy` que tenha ficado no site já instalado;
 - `server_tokens off` no site. O `nginx.conf` do Ubuntu 26.04 já define `server_tokens build` no contexto `http`; o `provision.sh` comenta essa linha. Um segundo `server_tokens` em `conf.d` faz o `nginx -t` acusar diretiva duplicada, então não há arquivo em `conf.d` para isso.
 
 A chave do certificado é ECDSA P-256 (`secp256r1`), assinada com SHA-256 pela Let's Encrypt. É o par que os checkers costumam descrever como assinatura boa e chave de tamanho aceitável, e a cadeia pública é o que produz Certificate Trusted: YES. Se o ssl.org rotular a chave de outro jeito, o `enable-https.sh` é o lugar para trocar `--key-type` e emitir de novo; o restante da configuração não depende disso.
@@ -201,7 +202,7 @@ Um usuário só, vindo de `DEMO_USERNAME`. A senha digitada é conferida com `bc
 
 Depois da senha certa o identificador da sessão anônima é apagado e outro é emitido. Isso corta fixação de sessão: quem plantou o cookie de antes do login não fica autenticado. O teste `test_sessao_muda_depois_do_login` cobre a troca.
 
-O formulário leva `csrf_token` guardado na sessão do servidor e comparado com `hmac.compare_digest`. POST sem token, ou com `Origin` de outro host, não autentica.
+O formulário leva `csrf_token` guardado na sessão do servidor e comparado com `hmac.compare_digest`. POST sem token, com `Origin` de outro host, ou com `Origin: null`, não autentica. Cabeçalho `Origin` ausente continua aceito: o curl, por exemplo, não manda esse campo, e isso sozinho não é um POST de outro site.
 
 ### A04:2025 Cryptographic Failures
 
@@ -213,7 +214,9 @@ O TLS fica no Nginx, não no Flask. A seção anterior descreve o perfil `shortl
 
 ### A02:2025 Security Misconfiguration
 
-`criar_app` força `DEBUG = False` e `PROPAGATE_EXCEPTIONS = False`. O `python app.py` também sobe com `debug=False`. Cabeçalhos em `adicionar_cabecalhos`: CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy` fechando câmera, microfone e geolocalização, `Cache-Control: no-store`, e HSTS quando a conexão é HTTPS. O Nginx repete os cabeçalhos do site e esconde o HSTS vindo do proxy (`proxy_hide_header Strict-Transport-Security`), para não sair duplicado. `server_tokens off` fica no server do site. O Gunicorn não publica socket de controle e não escuta fora de `127.0.0.1`.
+`criar_app` força `DEBUG = False` e `PROPAGATE_EXCEPTIONS = False`. O `python app.py` também sobe com `debug=False`. Cabeçalhos em `adicionar_cabecalhos`: CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, `Permissions-Policy` fechando câmera, microfone e geolocalização, `Cache-Control: no-store`, e HSTS quando a conexão é HTTPS. O Nginx repete CSP, `nosniff`, `X-Frame-Options` e `Permissions-Policy`, e esconde o HSTS vindo do proxy (`proxy_hide_header Strict-Transport-Security`), para não sair duplicado. `Referrer-Policy` fica só na aplicação. `server_tokens off` fica no server do site. O Gunicorn não publica socket de controle e não escuta fora de `127.0.0.1`.
+
+`no-referrer` nos dois lugares quebrou o login no Chrome: o navegador manda `Origin: null` no POST do formulário da mesma página, `origem_aceita()` recusa (log `login_origem_recusada`) e a resposta é 400, "Não foi possível validar o formulário". `same-origin` ainda não entrega o referrer a outro site e deixa o Chrome enviar a origem real nesse POST. `Origin: null` continua rejeitado, e o token CSRF continua obrigatório.
 
 A unidade systemd roda como `www-data`, com `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome` e `PrivateTmp`. O `.env` é root:root 600 e o systemd, como root, coloca as variáveis no processo. `carregar_env()` só chama o `load_dotenv` se o processo conseguir ler o arquivo; na VM ele não consegue, e segue com o ambiente que já recebeu. No notebook o arquivo é do usuário que sobe o `python app.py`, e aí a leitura local continua valendo.
 

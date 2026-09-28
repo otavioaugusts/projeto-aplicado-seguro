@@ -165,12 +165,51 @@ def test_logout_sem_csrf_mantem_a_sessao(client):
     assert client.get("/interno").status_code == 200
 
 
+def test_login_aceita_origin_do_mesmo_host(client):
+    resposta = postar_login(
+        client,
+        USUARIO,
+        SENHA,
+        ip="203.0.113.40",
+        extra_headers={"Origin": "http://localhost"},
+    )
+    assert resposta.status_code == 303
+    assert "/interno" in resposta.headers["Location"]
+    assert client.get("/interno").status_code == 200
+
+
+def test_login_recusa_origin_null(client):
+    resposta = postar_login(
+        client,
+        USUARIO,
+        SENHA,
+        ip="203.0.113.41",
+        extra_headers={"Origin": "null"},
+    )
+    assert resposta.status_code == 400
+    assert "Não foi possível validar o formulário" in resposta.get_data(as_text=True)
+    assert client.get("/interno").status_code == 302
+
+
+def test_csrf_continua_obrigatorio_com_origin_do_host(client):
+    cabecalhos = {"X-Real-IP": "203.0.113.42", "Origin": "http://localhost"}
+    client.get("/login", headers=cabecalhos)
+    resposta = client.post(
+        "/login",
+        data={"username": USUARIO, "password": SENHA, "csrf_token": "nao-confere"},
+        headers=cabecalhos,
+    )
+    assert resposta.status_code == 400
+    assert client.get("/interno").status_code == 302
+
+
 def test_cabecalhos_de_seguranca(client):
     resposta = client.get("/login")
     assert resposta.headers["Content-Security-Policy"] == POLITICA_CSP
     assert resposta.headers["X-Content-Type-Options"] == "nosniff"
     assert resposta.headers["X-Frame-Options"] == "DENY"
-    assert resposta.headers["Referrer-Policy"] == "no-referrer"
+    assert resposta.headers["Referrer-Policy"] == "same-origin"
+    assert resposta.headers["Referrer-Policy"] != "no-referrer"
     assert "script-src 'none'" in resposta.headers["Content-Security-Policy"]
     assert resposta.headers["Cache-Control"] == "no-store"
 

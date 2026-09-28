@@ -78,6 +78,10 @@ def test_nginx_csp_igual_a_da_aplicacao_e_tem_pqc():
     assert "TLSv1.0" not in nginx
     assert "proxy_hide_header Strict-Transport-Security;" in nginx
     assert "ssl_stapling" not in nginx
+    assert "Referrer-Policy" not in nginx
+    assert "no-referrer" not in nginx
+    provision = (RAIZ / "infra" / "provision.sh").read_text(encoding="utf-8")
+    assert "add_header[[:space:]]+Referrer-Policy" in provision
 
 
 def test_fail2ban_e_sshd_batem_com_o_escopo():

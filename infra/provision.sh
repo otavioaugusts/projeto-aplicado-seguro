@@ -123,6 +123,12 @@ install -d -m 755 /var/www/html/.well-known/acme-challenge
 if [[ ! -f /etc/nginx/sites-available/projeto-aplicado.conf ]]; then
   install -m 644 "${APP_DIR}/infra/nginx/projeto-aplicado-http.conf" /etc/nginx/sites-available/projeto-aplicado.conf
 fi
+# Referrer-Policy sai só do Flask (same-origin). Um add_header no site,
+# em especial no-referrer, faz o Chrome mandar Origin: null no POST do login.
+if [[ -f /etc/nginx/sites-available/projeto-aplicado.conf ]]; then
+  sed -i -E '/^[[:space:]]*add_header[[:space:]]+Referrer-Policy[[:space:]]/d' \
+    /etc/nginx/sites-available/projeto-aplicado.conf
+fi
 ln -sfn /etc/nginx/sites-available/projeto-aplicado.conf /etc/nginx/sites-enabled/projeto-aplicado.conf
 rm -f /etc/nginx/sites-enabled/default
 nginx -t

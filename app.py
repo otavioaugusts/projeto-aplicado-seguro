@@ -297,7 +297,7 @@ def criar_app() -> Flask:
         resposta.headers["Content-Security-Policy"] = POLITICA_CSP
         resposta.headers["X-Content-Type-Options"] = "nosniff"
         resposta.headers["X-Frame-Options"] = "DENY"
-        resposta.headers["Referrer-Policy"] = "no-referrer"
+        resposta.headers["Referrer-Policy"] = "same-origin"
         resposta.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         resposta.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         resposta.headers["X-Permitted-Cross-Domain-Policies"] = "none"
