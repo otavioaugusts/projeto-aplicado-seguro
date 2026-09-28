@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block titulo %}Área interna · Projeto Aplicado{% endblock %}
+{% block conteudo %}
+<header class="topo">
+  <p class="disciplina">UNCISAL · Segurança da Informação</p>
+  <h1>Área interna</h1>
+  <p>Esta página só é montada depois que o servidor confere a sessão.</p>
+</header>
+<section class="painel">
+  <p>Usuário autenticado: <strong>{{ usuario }}</strong></p>
+  <p>Sessão emitida em {{ emitida_em }}.</p>
+  <p>Otavio Augustus Cavalcante da Silva — pós-graduação em Segurança da Informação.</p>
+</section>
+<form method="post" action="{{ url_for('sair') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Sair</button>
+</form>
+{% endblock %}

@@ -1,0 +1,110 @@
+:root {
+  color-scheme: light;
+  --fundo: #f3f0e8;
+  --papel: #fffdf8;
+  --tinta: #1c1915;
+  --muted: #5c564c;
+  --linha: #ddd6c8;
+  --acao: #1d3d34;
+  --acao-texto: #f7f6f2;
+  --alerta-fundo: #f8e8e4;
+  --alerta-tinta: #6d2218;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--fundo);
+  color: var(--tinta);
+  font: 16px/1.5 "Segoe UI", "Liberation Sans", sans-serif;
+}
+
+.folha {
+  max-width: 32rem;
+  margin: 8vh auto;
+  padding: 2rem 1.5rem 1.75rem;
+  background: var(--papel);
+  border: 1px solid var(--linha);
+}
+
+.disciplina {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+
+h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.6rem;
+  font-weight: 650;
+}
+
+.topo p {
+  margin: 0;
+}
+
+.alerta {
+  margin: 1.25rem 0 0;
+  padding: 0.7rem 0.8rem;
+  background: var(--alerta-fundo);
+  color: var(--alerta-tinta);
+}
+
+.painel {
+  margin-top: 1.25rem;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 1.25rem;
+}
+
+label {
+  margin-top: 0.55rem;
+  font-size: 0.92rem;
+}
+
+input {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--linha);
+  background: #fff;
+  color: var(--tinta);
+  font: inherit;
+}
+
+button {
+  margin-top: 0.9rem;
+  padding: 0.6rem 0.9rem;
+  border: 0;
+  background: var(--acao);
+  color: var(--acao-texto);
+  font: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: var(--acao);
+}
+
+input:focus,
+button:focus,
+a:focus {
+  outline: 2px solid var(--acao);
+  outline-offset: 2px;
+}
+
+@media (max-width: 40rem) {
+  .folha {
+    margin: 0;
+    min-height: 100vh;
+    border: 0;
+  }
+}
