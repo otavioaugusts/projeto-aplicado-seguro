@@ -4,7 +4,7 @@ Otavio Augustus Cavalcante da Silva
 Pós-graduação em Segurança da Informação, UNCISAL  
 Disciplina: Projeto Aplicado: Práticas de Mercado
 
-Repositório público do protótipo: login, uma página interna e logout, com o que o [escopo da disciplina](https://github.com/ziraldocardoso/Projeto_aplicado-praticas_de_mercado/blob/main/Escopo_e_elementos_obrigatorios.md) pede em volta disso. A aplicação está em https://18.228.27.223 (Elastic IP, AWS `sa-east-1`, `t3.micro`, Ubuntu 26.04 LTS). Os prints do ssl.org e da DigiCert ainda vão para `docs/img/`.
+Repositório público do protótipo: login, uma página interna e logout, com o que o [escopo da disciplina](https://github.com/ziraldocardoso/Projeto_aplicado-praticas_de_mercado/blob/main/Escopo_e_elementos_obrigatorios.md) pede em volta disso. A aplicação está em https://18.228.27.223 (Elastic IP, AWS `sa-east-1`, `t3.micro`, Ubuntu 26.04 LTS). Os prints do ssl.org e da DigiCert, de 28/09/2026, estão em `docs/img/`.
 
 O desenvolvimento foi feito num IDE com assistência de IA (Cursor, no papel do Antigravity indicado no escopo). Usei a IA para escrever e revisar o código. O que está aqui é o que o escopo pede, conferido com teste automatizado neste repositório.
 
@@ -151,9 +151,9 @@ O Nginx de produção (`infra/nginx/projeto-aplicado.conf`):
 - `Referrer-Policy` não é repetido no Nginx. Quem define é o Flask, com `same-origin`. O `provision.sh` apaga um `add_header Referrer-Policy` que tenha ficado no site já instalado;
 - `server_tokens off` no site. O `nginx.conf` do Ubuntu 26.04 já define `server_tokens build` no contexto `http`; o `provision.sh` comenta essa linha. Um segundo `server_tokens` em `conf.d` faz o `nginx -t` acusar diretiva duplicada, então não há arquivo em `conf.d` para isso.
 
-A chave do certificado é ECDSA P-256 (`secp256r1`), assinada com SHA-256 pela Let's Encrypt. É o par que os checkers costumam descrever como assinatura boa e chave de tamanho aceitável, e a cadeia pública é o que produz Certificate Trusted: YES. Se o ssl.org rotular a chave de outro jeito, o `enable-https.sh` é o lugar para trocar `--key-type` e emitir de novo; o restante da configuração não depende disso.
+A chave do certificado é ECDSA P-256 (`secp256r1`). O SSL.org, em 28/09/2026, leu `sha384 / EC 256 bits (secp256r1) · Good signature · Good key`, com Certificate Trusted: Yes, emissor Let's Encrypt e cadeia Valid/Complete. A validade daquele print vai de 28/09/2026 a 04/10/2026: são os cerca de 6 dias do perfil `shortlived`. A renovação fica no cron do Certbot, duas vezes por dia.
 
-No servidor, a prova local do PQC é o `openssl s_client` com `-groups X25519MLKEM768` citando esse grupo na negociação, e `openssl version` em 3.5 ou mais novo. O print oficial é o checker da DigiCert, no fim deste relatório.
+No servidor, o `openssl s_client` com `-groups X25519MLKEM768` confirma esse grupo na negociação. As versões conferidas são Nginx 1.28.3 e OpenSSL 3.5.5. O print da DigiCert, no fim deste relatório, marca Pass para TLS 1.3 e para a troca de chaves pós-quântica.
 
 Para um domínio, o SSL Labs pede nota A. Esta entrega usa IP, então o checker pedido é o ssl.org, não o SSL Labs. A configuração acima é a mesma que eu usaria para buscar essa nota: TLS 1.0 e 1.1 desligados, só sigilo de encaminhamento, cadeia completa, HSTS. Não tenho domínio para mostrar a nota.
 
@@ -161,7 +161,7 @@ Para um domínio, o SSL Labs pede nota A. Esta entrega usa IP, então o checker 
 
 - [x] Aplicação no ar em https://18.228.27.223 (`sa-east-1`, `t3.micro`).
 - [x] Nginx 1.28.3 com HTTPS (Certbot 5.8.0, perfil `shortlived`, certificado de IP) e redirect HTTP → HTTPS.
-- [ ] ssl.org com Certificate Trusted: YES e Good signature · Acceptable key, e DigiCert com PQC. A negociação `X25519MLKEM768` já foi vista com `openssl s_client`. Falta o print em `docs/img/`.
+- [x] ssl.org em 28/09/2026: Certificate Trusted: Yes, `sha384 / EC 256 bits (secp256r1) · Good signature · Good key`, emissor Let's Encrypt, cadeia Valid/Complete, TLSv1.2 e TLSv1.3. DigiCert: Pass em TLS 1.3 e em troca de chaves pós-quântica. O `openssl` confirma o grupo `X25519MLKEM768`. Prints em `docs/img/`.
 - [x] SSH só por chave, Fail2Ban com 4 tentativas e ban de 24 horas. UFW e security group liberam 22, 80 e 443; a porta 22 fica aberta e é protegida pela chave e pelo Fail2Ban.
 - [x] Repositório público no GitHub.
 - [x] `.gitignore` cobre `.env`, chave, `venv`, banco local. Não há segredo commitado.
@@ -263,15 +263,19 @@ O `git reset --hard origin/main` e a verificação da chave de host do SSH conve
 - IP público: `18.228.27.223`
 - URL: https://18.228.27.223
 
-Print do [SSL.org](https://www.ssl.org/) (Certificate Trusted: YES e Algorithm / Key Type & Size: Good signature · Acceptable key):
+Consulta ao [SSL.org](https://www.ssl.org/) em 28/09/2026, para `18.228.27.223`. Certificate Trusted: Yes. Algorithm / Key Type & Size: `sha384 / EC 256 bits (secp256r1) · Good signature · Good key`. Emissor: Let's Encrypt. Cadeia: Valid/Complete. Protocolos: TLSv1.2 e TLSv1.3. A validade exibida vai de 28/09/2026 a 04/10/2026, os 6 dias do certificado `shortlived`. A renovação é automática pelo cron do Certbot (`certbot renew`), com recarga do Nginx no gancho de deploy.
 
-`docs/img/ssl-org.png` — ainda não anexado.
+![SSL.org: certificado confiável, sha384 e chave EC de 256 bits](docs/img/ssl-org-1.png)
 
-Print do [DigiCert PQC checker](https://www.digicert.com/pqc-checker) com troca de chaves `X25519MLKEM768`:
+O segundo print do mesmo checker lista TLS 1.2 e TLS 1.3, o HSTS e o grupo `X25519MLKEM768` entre os suportados pelo servidor.
 
-`docs/img/digicert-pqc.png` — ainda não anexado.
+![SSL.org: TLS 1.2, TLS 1.3 e grupo X25519MLKEM768](docs/img/ssl-org-2.png)
 
-O que esperar em cada um, e o comando local equivalente, estão em [`infra/PROVISIONAMENTO.md`](infra/PROVISIONAMENTO.md).
+Consulta ao [DigiCert PQC checker](https://www.digicert.com/pqc-checker) no mesmo dia. Os dois itens pedidos aparecem como Pass: TLS 1.3 enabled e Quantum-safe key exchange enabled. O grupo negociado na sessão de teste é `X25519MLKEM768`.
+
+![DigiCert: TLS 1.3 e troca de chaves pós-quântica](docs/img/digicert-pqc.png)
+
+No próprio servidor, o `openssl s_client` com `-groups X25519MLKEM768` confirma esse grupo. Nginx 1.28.3, OpenSSL 3.5.5. O comando está em [`infra/PROVISIONAMENTO.md`](infra/PROVISIONAMENTO.md).
 
 ## Referências
 

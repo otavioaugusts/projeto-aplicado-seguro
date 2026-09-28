@@ -123,4 +123,4 @@ echo | openssl s_client -connect 18.228.27.223:443 -tls1_3 -groups X25519MLKEM76
 curl -fsS https://18.228.27.223/saude
 ```
 
-O que já foi conferido nesta instância: HTTPS com o certificado de IP, negociação `X25519MLKEM768`, Fail2Ban, SSH só por chave e UFW. Os prints do ssl.org e da DigiCert ainda vão para `docs/img/`.
+O que já foi conferido nesta instância, em 28/09/2026: HTTPS com certificado de IP de 6 dias e renovação no cron do Certbot; SSL.org com Certificate Trusted: Yes, `sha384 / EC 256 bits (secp256r1) · Good signature · Good key`, cadeia Valid/Complete, TLSv1.2 e TLSv1.3; DigiCert com Pass em TLS 1.3 e em troca de chaves pós-quântica. Os prints estão em `docs/img/`. O `openssl s_client` confirma o grupo `X25519MLKEM768` (Nginx 1.28.3, OpenSSL 3.5.5). Fail2Ban, SSH só por chave e UFW também.
