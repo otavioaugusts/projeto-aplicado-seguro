@@ -1,0 +1,25 @@
+[Unit]
+Description=Projeto Aplicado - aplicacao web
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/projeto-aplicado
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Lido pelo systemd, como root. O processo www-data não abre este arquivo.
+EnvironmentFile=/opt/projeto-aplicado/.env
+ExecStart=/opt/projeto-aplicado/.venv/bin/gunicorn -c /opt/projeto-aplicado/gunicorn.conf.py app:app
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+# Segredos e credenciais
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.ppk
+id_rsa
+id_ed25519
+id_ecdsa
+credentials.json
+service-account*.json
+secrets/
+
+# Python
+.venv
+.venv/
+venv
+venv/
+env
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node (caso alguma ferramenta local crie)
+node_modules
+node_modules/
+
+# Bancos locais
+*.sqlite
+*.sqlite3
+*.db
+
+# Sistema e IDE
+.DS_Store
+.idea/
+.vscode/
+*.log
+.python-version
