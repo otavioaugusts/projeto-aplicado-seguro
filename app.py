@@ -63,11 +63,21 @@ class Estado:
         self.cadeado = threading.Lock()
 
 
-def carregar_env() -> None:
-    caminho = Path(__file__).resolve().parent / ".env"
-    if caminho.is_file():
+def carregar_env(caminho: Path | None = None) -> None:
+    """Lê o .env só quando este processo consegue abri-lo.
+
+    No desenvolvimento local o arquivo é do próprio usuário. Na VM ele fica
+    root:root 600 e o Gunicorn roda como www-data: o systemd já injetou as
+    variáveis pelo EnvironmentFile, e abrir o arquivo daria PermissionError.
+    """
+    arquivo = caminho if caminho is not None else Path(__file__).resolve().parent / ".env"
+    if not arquivo.is_file() or not os.access(arquivo, os.R_OK):
+        return
+    try:
         # Não sobrescreve variável que o systemd ou o teste já definiu.
-        load_dotenv(caminho, override=False)
+        load_dotenv(arquivo, override=False)
+    except OSError:
+        return
 
 
 def _exigir(nome: str) -> str:

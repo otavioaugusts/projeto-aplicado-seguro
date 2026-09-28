@@ -1,4 +1,5 @@
 import logging
+import os
 
 from app import POLITICA_CSP
 from tests.credenciais import SENHA, USUARIO
@@ -207,3 +208,17 @@ def test_log_de_falha_nao_guarda_a_senha(client, caplog):
 def test_aplicacao_nao_esta_em_debug(aplicacao):
     assert aplicacao.debug is False
     assert aplicacao.config["PROPAGATE_EXCEPTIONS"] is False
+
+
+def test_env_ilegivel_nao_interrompe(tmp_path, monkeypatch):
+    from app import carregar_env
+
+    arquivo = tmp_path / ".env"
+    arquivo.write_text("NAO_DEVE_ENTRAR=1\n", encoding="utf-8")
+    arquivo.chmod(0)
+    if os.access(arquivo, os.R_OK):
+        # root ignora o mode 0. O caso da VM é um processo sem esse privilégio.
+        return
+    monkeypatch.delenv("NAO_DEVE_ENTRAR", raising=False)
+    carregar_env(arquivo)
+    assert os.environ.get("NAO_DEVE_ENTRAR") is None

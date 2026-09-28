@@ -67,14 +67,19 @@ if partes < [5, 4, 0]:
     raise SystemExit(f"Certbot {sys.argv[1]} é anterior a 5.4.")
 PY
 
-install -d -m 755 /usr/local/sbin /etc/letsencrypt/renewal-hooks/deploy /var/www/html/.well-known/acme-challenge
-cat > /usr/local/sbin/reload-nginx-cert.sh << 'EOF'
+install -d -m 755 /etc/letsencrypt/renewal-hooks/deploy /var/www/html/.well-known/acme-challenge
+cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh << 'EOF'
 #!/bin/sh
 systemctl reload nginx
 EOF
-chmod 755 /usr/local/sbin/reload-nginx-cert.sh
-cp /usr/local/sbin/reload-nginx-cert.sh /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+# Um gancho só. O deploy_hook gravado na emissão dispararia o reload outra vez.
+shopt -s nullglob
+for conf in /etc/letsencrypt/renewal/*.conf; do
+  sed -i -E '/^[[:space:]]*(renew_hook|deploy_hook)[[:space:]]*=/d' "$conf"
+done
+shopt -u nullglob
+rm -f /usr/local/sbin/reload-nginx-cert.sh
 
 if [[ "$STAGING" -eq 1 ]]; then
   echo "ATENÇÃO: --staging pede um certificado que o navegador e o ssl.org NÃO confiam."
@@ -93,7 +98,6 @@ if [[ ! -f "/etc/letsencrypt/live/${IP}/fullchain.pem" ]]; then
     --webroot
     --webroot-path /var/www/html
     --ip-address "$IP"
-    --deploy-hook /usr/local/sbin/reload-nginx-cert.sh
   )
   if [[ "$STAGING" -eq 1 ]]; then
     argumentos+=(--staging)
@@ -150,7 +154,7 @@ fi
 echo
 echo "HTTPS no ar para https://${IP}/"
 echo "Renovação: duas vezes por dia, em /etc/crontab, com espera aleatória de até uma hora."
-echo "O gancho /usr/local/sbin/reload-nginx-cert.sh recarrega o Nginx quando um certificado novo entra."
+echo "O gancho /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh recarrega o Nginx quando um certificado novo entra."
 if [[ "$STAGING" -eq 1 ]]; then
   echo "Este certificado é de staging. Rode de novo sem --staging para o ssl.org marcar Certificate Trusted: YES."
 else

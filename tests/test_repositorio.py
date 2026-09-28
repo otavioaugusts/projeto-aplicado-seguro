@@ -76,6 +76,8 @@ def test_nginx_csp_igual_a_da_aplicacao_e_tem_pqc():
     assert "ssl_protocols TLSv1.2 TLSv1.3;" in nginx
     assert "TLSv1.1" not in nginx
     assert "TLSv1.0" not in nginx
+    assert "proxy_hide_header Strict-Transport-Security;" in nginx
+    assert "ssl_stapling" not in nginx
 
 
 def test_fail2ban_e_sshd_batem_com_o_escopo():
@@ -86,6 +88,19 @@ def test_fail2ban_e_sshd_batem_com_o_escopo():
     assert "PasswordAuthentication no" in sshd
     assert "AuthenticationMethods publickey" in sshd
     assert "PermitRootLogin no" in sshd
+
+
+def test_ssh_aberto_com_fail2ban_e_usuario_deploy():
+    provision = (RAIZ / "infra" / "provision.sh").read_text(encoding="utf-8")
+    assert "ufw allow 22/tcp" in provision
+    assert "ufw allow from" not in provision
+    assert "Defina ADMIN_CIDR" not in provision
+    sudoers = (RAIZ / "infra" / "sudoers" / "projeto-aplicado").read_text(encoding="utf-8")
+    assert sudoers.startswith("deploy ")
+    assert "systemctl restart projeto-aplicado" in sudoers
+    assert "NOPASSWD: ALL" not in sudoers
+    deploy = (RAIZ / "infra" / "remote-deploy.sh").read_text(encoding="utf-8")
+    assert "origin/main" in deploy
 
 
 def test_scripts_de_infra_tem_sintaxe_bash():

@@ -4,7 +4,7 @@ Otavio Augustus Cavalcante da Silva
 Pós-graduação em Segurança da Informação, UNCISAL  
 Disciplina: Projeto Aplicado: Práticas de Mercado
 
-Repositório público do protótipo: login, uma página interna e logout, com o que o [escopo da disciplina](https://github.com/ziraldocardoso/Projeto_aplicado-praticas_de_mercado/blob/main/Escopo_e_elementos_obrigatorios.md) pede em volta disso. A VM na AWS ainda não foi criada. O IP público e os prints de TLS ficam marcados no fim deste texto para eu preencher depois do deploy.
+Repositório público do protótipo: login, uma página interna e logout, com o que o [escopo da disciplina](https://github.com/ziraldocardoso/Projeto_aplicado-praticas_de_mercado/blob/main/Escopo_e_elementos_obrigatorios.md) pede em volta disso. A aplicação está em https://18.228.27.223 (Elastic IP, AWS `sa-east-1`, `t3.micro`, Ubuntu 26.04 LTS). Os prints do ssl.org e da DigiCert ainda vão para `docs/img/`.
 
 O desenvolvimento foi feito num IDE com assistência de IA (Cursor, no papel do Antigravity indicado no escopo). Usei a IA para escrever e revisar o código. O que está aqui é o que o escopo pede, conferido com teste automatizado neste repositório.
 
@@ -67,30 +67,31 @@ Settings → Secrets and variables → Actions. Nenhum destes valores aparece no
 
 | Secret | O que é |
 | --- | --- |
-| `VM_HOST` | IP público da VM, sem esquema e sem barra |
-| `VM_USER` | `ubuntu`, o usuário da AMI da Canonical |
+| `VM_HOST` | `18.228.27.223` |
+| `VM_USER` | `deploy` |
 | `VM_SSH_KEY` | chave privada do deploy, o arquivo inteiro, incluindo as linhas de começo e fim |
-| `VM_SSH_KNOWN_HOSTS` | saída de `ssh-keyscan IP_PUBLICO`, colada como está |
+| `VM_SSH_KNOWN_HOSTS` | saída de `ssh-keyscan 18.228.27.223`, colada como está |
 
-A chave pública correspondente vai para `/home/ubuntu/.ssh/authorized_keys`. O workflow usa `StrictHostKeyChecking=yes`. Sem o `VM_SSH_KNOWN_HOSTS` ele para, em vez de aceitar qualquer host na primeira conexão.
+A chave pública correspondente vai para `/home/deploy/.ssh/authorized_keys`. O `ubuntu` da AMI fica para administração: essa conta recebe `NOPASSWD: ALL` do cloud-init, então ela não pode ser a conta do Actions. O `deploy` só tem sudo para `systemctl restart projeto-aplicado`. O workflow usa `StrictHostKeyChecking=yes`. Sem o `VM_SSH_KNOWN_HOSTS` ele para, em vez de aceitar qualquer host na primeira conexão.
 
 ## VM: Ubuntu 26.04 LTS
 
 A disciplina deixa Ubuntu ou Debian estáveis. Para o teste de PQC da DigiCert eu preciso de `X25519MLKEM768` no TLS 1.3. Isso entrou no OpenSSL 3.5. Conferi o que cada Ubuntu entrega:
 
-- **Ubuntu 26.04 LTS** traz OpenSSL 3.5.5 e Nginx 1.28.2. O Nginx do sistema já está ligado a esse OpenSSL. Com `ssl_ecdh_curve X25519MLKEM768:X25519:secp384r1:prime256v1` o servidor oferece o grupo híbrido e ainda fala com cliente que só tem X25519. É a imagem que vou usar.
+- **Ubuntu 26.04 LTS** nesta VM traz OpenSSL 3.5.5 e Nginx 1.28.3. O Nginx do sistema já está ligado a esse OpenSSL. Com `ssl_ecdh_curve X25519MLKEM768:X25519:secp384r1:prime256v1` o servidor oferece o grupo híbrido e ainda fala com cliente que só tem X25519. O `openssl s_client` nesta instância negociou `X25519MLKEM768`.
 - Ubuntu 24.04 LTS traz OpenSSL 3.0.13. O mesmo `ssl_ecdh_curve` faz o `nginx -t` falhar, porque o grupo não existe. A própria Ubuntu registrou que não pretende fazer backport desses grupos para o 24.04. Dá para compilar Nginx contra OpenSSL 3.5, ou carregar o `oqs-provider`, mas isso é outra pilha de software numa VM pequena. Não segui por aí.
 - 25.04 e 25.10 também têm o grupo, e não são LTS. Em setembro de 2026 o LTS vigente com PQC nativo é o 26.04.
 
-Na AWS: AMI **Ubuntu Server 26.04 LTS** (64-bit x86, Canonical), instância `t3.micro`, disco gp3 de 20 GB. Região à escolha; `sa-east-1` é a que fica mais perto. O free tier da conta é que diz se o tipo entra no crédito. Não crio access key de IAM na instância: o deploy usa SSH, não a API da AWS.
+Na AWS: AMI **Ubuntu Server 26.04 LTS** (64-bit x86, Canonical), instância `t3.micro`, região `sa-east-1`, Elastic IP `18.228.27.223`. Não há access key de IAM na instância: o deploy usa SSH, não a API da AWS. O Certbot instalado é o 5.8.0.
 
 O passo a passo com os comandos está em [`infra/PROVISIONAMENTO.md`](infra/PROVISIONAMENTO.md). Resumo, na ordem:
 
-1. Security group: 80 e 443 para a internet; 22 só para o meu IP `/32`. Depois, as faixas de IP do GitHub Actions na porta 22, senão o workflow não entra. A lista pública está em `https://api.github.com/meta`, campo `actions`.
-2. SSH com a chave, usuário `ubuntu`.
-3. `sudo ADMIN_CIDR=MEU_IP/32 bash .../infra/provision.sh`, a partir de um clone. O script instala Nginx, Fail2Ban, UFW e Certbot, e recusa ligar o firewall se o `ADMIN_CIDR` não for o IP da sessão SSH atual.
-4. `sudo python3 /opt/projeto-aplicado/scripts/init_env.py` e `sudo systemctl start projeto-aplicado`.
-5. `sudo /opt/projeto-aplicado/infra/enable-https.sh --ip IP_PUBLICO --email meu-email`. Sem `--staging`.
+1. Security group: 22, 80 e 443 para a internet. A porta 22 não fica limitada a um `/32`: o IP de onde eu administro muda, e o GitHub Actions também precisa entrar. A barreira é chave SSH mais Fail2Ban.
+2. SSH com a chave, usuário `ubuntu`, só para montar a máquina.
+3. `sudo bash infra/provision.sh` a partir do clone do branch desejado. O script cria o usuário `deploy`, abre 22/80/443 no UFW e não exige `ADMIN_CIDR`.
+4. Chave pública do deploy em `/home/deploy/.ssh/authorized_keys`, e o secret `VM_USER` igual a `deploy`.
+5. `sudo python3 /opt/projeto-aplicado/scripts/init_env.py` e `sudo systemctl start projeto-aplicado`.
+6. `sudo /opt/projeto-aplicado/infra/enable-https.sh --ip 18.228.27.223 --email meu-email`. Sem `--staging`.
 
 O que cada arquivo de infra faz:
 
@@ -109,7 +110,7 @@ O que cada arquivo de infra faz:
 
 `infra/ssh/99-hardening.conf` desliga senha (`PasswordAuthentication no`), exige `AuthenticationMethods publickey`, recusa login de root e limita a 4 tentativas por conexão. No Ubuntu o `Include` do `sshd_config.d` vem antes do resto do arquivo, e o OpenSSH fica com o primeiro valor que encontra. Por isso o drop-in ganha do `PasswordAuthentication yes` que a imagem às vezes ainda traz. Confiro com `sshd -T`.
 
-O UFW nega entrada, libera 80 e 443, e libera 22 só a partir do `ADMIN_CIDR`. O security group repete essa ideia na borda da AWS. Os dois precisam concordar: se o grupo deixa a porta fechada, o UFW não tem o que filtrar.
+O UFW nega o resto da entrada e libera 22, 80 e 443. O security group repete essas três portas. A porta 22 aceita conexão de qualquer origem; sem chave a sessão não completa, e quatro falhas em dez minutos levam a um ban de 24 horas.
 
 Fail2Ban, jail `sshd`, arquivo `infra/fail2ban/jail.d-sshd.local`:
 
@@ -133,22 +134,21 @@ sudo /opt/certbot/bin/certbot certonly \
   --preferred-profile shortlived \
   --key-type ecdsa --elliptic-curve secp256r1 \
   --webroot --webroot-path /var/www/html \
-  --ip-address IP_PUBLICO \
-  --deploy-hook /usr/local/sbin/reload-nginx-cert.sh
+  --ip-address 18.228.27.223
 ```
 
 Não uso `--staging` na emissão final. O staging existe para eu errar sem bater no limite da CA; o certificado dele não é confiado, e o ssl.org não marcaria Certificate Trusted: YES.
 
-Renovação automática: o pip do Certbot não cria timer. O script acrescenta em `/etc/crontab` a linha recomendada pela EFF, duas vezes por dia, com uma espera aleatória de até uma hora antes do `certbot renew -q`. Certificado de 6 dias precisa dessa frequência. O `--deploy-hook` e o script em `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh` recarregam o Nginx só quando a emissão ou a renovação de fato grava certificado novo.
+Renovação automática: o pip do Certbot não cria timer. O script acrescenta em `/etc/crontab` a linha recomendada pela EFF, duas vezes por dia, com uma espera aleatória de até uma hora antes do `certbot renew -q`. Certificado de 6 dias precisa dessa frequência. O único gancho é `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh`. Não gravo `--deploy-hook` na emissão: os dois juntos recarregavam o Nginx duas vezes.
 
 O Nginx de produção (`infra/nginx/projeto-aplicado.conf`):
 
 - porta 80 redireciona para HTTPS, exceto `/.well-known/acme-challenge/`, que continua em `/var/www/html` para a renovação;
 - TLS 1.2 e 1.3 apenas, cifras ECDHE com AES-GCM e ChaCha20, sem DHE (evita grupo DH fraco);
 - `ssl_ecdh_curve X25519MLKEM768:X25519:secp384r1:prime256v1;`
-- cadeia completa em `fullchain.pem`, grampeamento OCSP com `chain.pem`;
-- HSTS de um ano, sem `preload` (preload é lista de domínio, e aqui o nome é um IP);
-- `server_tokens off`.
+- cadeia completa em `fullchain.pem`;
+- HSTS de um ano, sem `preload` (preload é lista de domínio, e aqui o nome é um IP). O Nginx esconde o HSTS que o Flask também manda, para o cliente ver o cabeçalho uma vez;
+- `server_tokens off` no site. O `nginx.conf` do Ubuntu 26.04 já define `server_tokens build` no contexto `http`; o `provision.sh` comenta essa linha. Um segundo `server_tokens` em `conf.d` faz o `nginx -t` acusar diretiva duplicada, então não há arquivo em `conf.d` para isso.
 
 A chave do certificado é ECDSA P-256 (`secp256r1`), assinada com SHA-256 pela Let's Encrypt. É o par que os checkers costumam descrever como assinatura boa e chave de tamanho aceitável, e a cadeia pública é o que produz Certificate Trusted: YES. Se o ssl.org rotular a chave de outro jeito, o `enable-https.sh` é o lugar para trocar `--key-type` e emitir de novo; o restante da configuração não depende disso.
 
@@ -158,10 +158,10 @@ Para um domínio, o SSL Labs pede nota A. Esta entrega usa IP, então o checker 
 
 ## Checklist do escopo
 
-- [ ] Aplicação no ar num IP público. A VM ainda não existe.
-- [ ] Nginx com HTTPS, Certbot e redirect HTTP → HTTPS. Os arquivos estão no repositório; a emissão depende da VM.
-- [ ] ssl.org com Certificate Trusted: YES e Good signature · Acceptable key, e DigiCert com PQC. Falta o print.
-- [x] SSH só por chave, Fail2Ban com 4 tentativas e ban de 24 horas, portas 80 e 443 abertas e 22 restrita. Configuração em `infra/`.
+- [x] Aplicação no ar em https://18.228.27.223 (`sa-east-1`, `t3.micro`).
+- [x] Nginx 1.28.3 com HTTPS (Certbot 5.8.0, perfil `shortlived`, certificado de IP) e redirect HTTP → HTTPS.
+- [ ] ssl.org com Certificate Trusted: YES e Good signature · Acceptable key, e DigiCert com PQC. A negociação `X25519MLKEM768` já foi vista com `openssl s_client`. Falta o print em `docs/img/`.
+- [x] SSH só por chave, Fail2Ban com 4 tentativas e ban de 24 horas. UFW e security group liberam 22, 80 e 443; a porta 22 fica aberta e é protegida pela chave e pelo Fail2Ban.
 - [x] Repositório público no GitHub.
 - [x] `.gitignore` cobre `.env`, chave, `venv`, banco local. Não há segredo commitado.
 - [x] Login, página interna e logout, escritos com IDE assistido por IA.
@@ -213,9 +213,9 @@ O TLS fica no Nginx, não no Flask. A seção anterior descreve o perfil `shortl
 
 ### A02:2025 Security Misconfiguration
 
-`criar_app` força `DEBUG = False` e `PROPAGATE_EXCEPTIONS = False`. O `python app.py` também sobe com `debug=False`. Cabeçalhos em `adicionar_cabecalhos`: CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy` fechando câmera, microfone e geolocalização, `Cache-Control: no-store`. O Nginx repete CSP, frame, nosniff e acrescenta HSTS. `server_tokens off` tira a versão do Nginx. O Gunicorn não publica socket de controle e não escuta fora de `127.0.0.1`.
+`criar_app` força `DEBUG = False` e `PROPAGATE_EXCEPTIONS = False`. O `python app.py` também sobe com `debug=False`. Cabeçalhos em `adicionar_cabecalhos`: CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy` fechando câmera, microfone e geolocalização, `Cache-Control: no-store`, e HSTS quando a conexão é HTTPS. O Nginx repete os cabeçalhos do site e esconde o HSTS vindo do proxy (`proxy_hide_header Strict-Transport-Security`), para não sair duplicado. `server_tokens off` fica no server do site. O Gunicorn não publica socket de controle e não escuta fora de `127.0.0.1`.
 
-A unidade systemd roda como `www-data`, com `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome` e `PrivateTmp`. O `.env` é lido pelo systemd como root; o processo não precisa de permissão de leitura no arquivo.
+A unidade systemd roda como `www-data`, com `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome` e `PrivateTmp`. O `.env` é root:root 600 e o systemd, como root, coloca as variáveis no processo. `carregar_env()` só chama o `load_dotenv` se o processo conseguir ler o arquivo; na VM ele não consegue, e segue com o ambiente que já recebeu. No notebook o arquivo é do usuário que sobe o `python app.py`, e aí a leitura local continua valendo.
 
 SSH sem senha, UFW e o security group estão na seção da VM. Nada disso é "default de imagem de nuvem deixado como veio".
 
@@ -251,18 +251,22 @@ As dependências diretas estão pinadas em `requirements.txt`. O workflow usa `a
 
 O `git reset --hard origin/main` e a verificação da chave de host do SSH conversam com A08 (Software or Data Integrity Failures): o que sobe na VM é o commit que o GitHub entregou, e o runner não aceita um host que ele acabou de conhecer na rede.
 
-## Evidências depois do deploy
+## Evidências
 
-IP público da VM: `PREENCHER_APOS_O_DEPLOY`  
-URL: `https://PREENCHER_APOS_O_DEPLOY/`
+- Região: `sa-east-1`
+- Tipo: `t3.micro`
+- Sistema: Ubuntu 26.04 LTS
+- Nginx 1.28.3, OpenSSL 3.5.5, Certbot 5.8.0
+- IP público: `18.228.27.223`
+- URL: https://18.228.27.223
 
 Print do [SSL.org](https://www.ssl.org/) (Certificate Trusted: YES e Algorithm / Key Type & Size: Good signature · Acceptable key):
 
-`docs/evidencias/ssl-org.png` — ainda não anexado.
+`docs/img/ssl-org.png` — ainda não anexado.
 
 Print do [DigiCert PQC checker](https://www.digicert.com/pqc-checker) com troca de chaves `X25519MLKEM768`:
 
-`docs/evidencias/digicert-pqc.png` — ainda não anexado.
+`docs/img/digicert-pqc.png` — ainda não anexado.
 
 O que esperar em cada um, e o comando local equivalente, estão em [`infra/PROVISIONAMENTO.md`](infra/PROVISIONAMENTO.md).
 

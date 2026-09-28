@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Prepara uma VM Ubuntu 26.04 LTS recém-criada.
-# Uso, a partir do clone em /opt/projeto-aplicado:
-#   sudo ADMIN_CIDR=203.0.113.10/32 ./infra/provision.sh
+# Prepara uma VM Ubuntu 26.04 LTS.
+# Rode como root, de preferência a partir do clone do branch que deve subir:
+#   sudo bash infra/provision.sh
+# A porta 22 fica aberta. A proteção é chave SSH e Fail2Ban (4 tentativas, 24h).
 set -euo pipefail
 
 if [[ "${EUID}" -ne 0 ]]; then
@@ -10,34 +11,25 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 APP_DIR="${APP_DIR:-/opt/projeto-aplicado}"
-APP_USER="${APP_USER:-ubuntu}"
+DEPLOY_USER="${DEPLOY_USER:-deploy}"
 REPO_URL="${REPO_URL:-https://github.com/otavioaugusts/projeto-aplicado-seguro.git}"
-ADMIN_CIDR="${ADMIN_CIDR:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_REPO="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 validar_usuario() {
   [[ "$1" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]
 }
 
-validar_cidr() {
-  local cidr="$1"
-  [[ "$cidr" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/([0-9]|[12][0-9]|3[0-2])$ ]] || return 1
-  local i octeto
-  for i in 1 2 3 4; do
-    octeto="${BASH_REMATCH[$i]}"
-    ((10#$octeto <= 255)) || return 1
-  done
+validar_ref() {
+  [[ "$1" =~ ^[A-Za-z0-9._/-]+$ ]]
 }
 
-if ! validar_usuario "$APP_USER"; then
-  echo "APP_USER inválido."
+if ! validar_usuario "$DEPLOY_USER"; then
+  echo "DEPLOY_USER inválido."
   exit 1
 fi
-if ! id "$APP_USER" >/dev/null 2>&1; then
-  echo "O usuário ${APP_USER} não existe nesta VM."
-  exit 1
-fi
-if ! validar_cidr "$ADMIN_CIDR"; then
-  echo "Defina ADMIN_CIDR com o seu IPv4 e a máscara, por exemplo 203.0.113.10/32."
+if [[ -n "${GIT_REF:-}" ]] && ! validar_ref "$GIT_REF"; then
+  echo "GIT_REF inválida."
   exit 1
 fi
 
@@ -58,16 +50,48 @@ apt-get install -y \
   git \
   openssl
 
-if [[ ! -d "${APP_DIR}/.git" ]]; then
-  git clone "$REPO_URL" "$APP_DIR"
+clonar_aplicacao() {
+  if [[ -d "${APP_DIR}/.git" ]]; then
+    return
+  fi
+  mkdir -p "$(dirname "$APP_DIR")"
+  local remote="" branch=""
+  if [[ -d "${SOURCE_REPO}/.git" && "${SOURCE_REPO}" != "${APP_DIR}" ]]; then
+    remote="$(git -C "$SOURCE_REPO" config --get remote.origin.url || true)"
+    branch="$(git -C "$SOURCE_REPO" rev-parse --abbrev-ref HEAD)"
+  fi
+  remote="${remote:-$REPO_URL}"
+  if [[ -n "${GIT_REF:-}" ]]; then
+    git clone --branch "$GIT_REF" "$remote" "$APP_DIR"
+  elif [[ -n "$branch" && "$branch" != "HEAD" ]]; then
+    git clone --branch "$branch" "$remote" "$APP_DIR"
+  else
+    git clone "$remote" "$APP_DIR"
+    if [[ -n "$branch" && "$branch" == "HEAD" ]]; then
+      git -C "$APP_DIR" checkout "$(git -C "$SOURCE_REPO" rev-parse HEAD)"
+    fi
+  fi
+}
+
+clonar_aplicacao
+
+if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
+  useradd --create-home --shell /bin/bash --user-group "$DEPLOY_USER"
 fi
+install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "/home/${DEPLOY_USER}/.ssh"
+if [[ ! -f "/home/${DEPLOY_USER}/.ssh/authorized_keys" ]]; then
+  install -m 600 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /dev/null "/home/${DEPLOY_USER}/.ssh/authorized_keys"
+fi
+chown "$DEPLOY_USER:$DEPLOY_USER" "/home/${DEPLOY_USER}/.ssh" "/home/${DEPLOY_USER}/.ssh/authorized_keys"
+chmod 700 "/home/${DEPLOY_USER}/.ssh"
+chmod 600 "/home/${DEPLOY_USER}/.ssh/authorized_keys"
 
 umask 022
-chown -R "${APP_USER}:${APP_USER}" "$APP_DIR"
-sudo -u "$APP_USER" python3 -m venv "${APP_DIR}/.venv"
-sudo -u "$APP_USER" "${APP_DIR}/.venv/bin/pip" install --upgrade pip
-sudo -u "$APP_USER" "${APP_DIR}/.venv/bin/pip" install -r "${APP_DIR}/requirements.txt"
-chmod -R a+rX "$APP_DIR"
+chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "$APP_DIR"
+sudo -u "$DEPLOY_USER" python3 -m venv "${APP_DIR}/.venv"
+sudo -u "$DEPLOY_USER" "${APP_DIR}/.venv/bin/pip" install --upgrade pip
+sudo -u "$DEPLOY_USER" "${APP_DIR}/.venv/bin/pip" install -r "${APP_DIR}/requirements.txt"
+find "$APP_DIR" -path "${APP_DIR}/.env" -prune -o -exec chmod a+rX {} +
 if [[ -f "${APP_DIR}/.env" ]]; then
   chown root:root "${APP_DIR}/.env"
   chmod 600 "${APP_DIR}/.env"
@@ -88,9 +112,17 @@ if partes < [5, 4, 0]:
 print(f"Certbot {sys.argv[1]} atende o escopo.")
 PY
 
+# O nginx.conf do Ubuntu 26.04 já traz `server_tokens build` no contexto http.
+# Outro server_tokens no mesmo contexto (conf.d) faz o nginx -t abortar.
+rm -f /etc/nginx/conf.d/hardening.conf
+if [[ -f /etc/nginx/nginx.conf ]]; then
+  sed -i -E 's/^([[:space:]]*)(server_tokens[[:space:]].*)$/# \1\2/' /etc/nginx/nginx.conf
+fi
+
 install -d -m 755 /var/www/html/.well-known/acme-challenge
-install -m 644 "${APP_DIR}/infra/nginx/conf.d-hardening.conf" /etc/nginx/conf.d/hardening.conf
-install -m 644 "${APP_DIR}/infra/nginx/projeto-aplicado-http.conf" /etc/nginx/sites-available/projeto-aplicado.conf
+if [[ ! -f /etc/nginx/sites-available/projeto-aplicado.conf ]]; then
+  install -m 644 "${APP_DIR}/infra/nginx/projeto-aplicado-http.conf" /etc/nginx/sites-available/projeto-aplicado.conf
+fi
 ln -sfn /etc/nginx/sites-available/projeto-aplicado.conf /etc/nginx/sites-enabled/projeto-aplicado.conf
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
@@ -107,7 +139,7 @@ install -m 644 "${APP_DIR}/infra/fail2ban/jail.d-sshd.local" /etc/fail2ban/jail.
 systemctl enable --now fail2ban
 systemctl restart fail2ban
 
-sed "s/^ubuntu /${APP_USER} /" "${APP_DIR}/infra/sudoers/projeto-aplicado" > /etc/sudoers.d/projeto-aplicado
+sed "s/^deploy /${DEPLOY_USER} /" "${APP_DIR}/infra/sudoers/projeto-aplicado" > /etc/sudoers.d/projeto-aplicado
 chmod 440 /etc/sudoers.d/projeto-aplicado
 visudo -cf /etc/sudoers.d/projeto-aplicado
 
@@ -119,34 +151,16 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw allow 80/tcp
 ufw allow 443/tcp
-ufw allow from "$ADMIN_CIDR" to any port 22 proto tcp
-if [[ -n "${EXTRA_SSH_CIDRS:-}" ]]; then
-  IFS=',' read -ra _cidrs <<< "${EXTRA_SSH_CIDRS}"
-  for cidr in "${_cidrs[@]}"; do
-    cidr="${cidr// /}"
-    if ! validar_cidr "$cidr"; then
-      echo "CIDR inválido em EXTRA_SSH_CIDRS: ${cidr}"
-      exit 1
-    fi
-    ufw allow from "$cidr" to any port 22 proto tcp
-  done
-fi
-ip_peer="$(ss -Htn state established '( sport = :22 )' 2>/dev/null | awk 'NR==1 {
-  peer = $NF
-  sub(/:[0-9]+$/, "", peer)
-  gsub(/[][]/, "", peer)
-  print peer
-}' || true)"
-if [[ -n "$ip_peer" && "$ADMIN_CIDR" != "${ip_peer}/32" ]]; then
-  echo "A sessão SSH atual vem de ${ip_peer}, mas ADMIN_CIDR é ${ADMIN_CIDR}."
-  echo "Parei antes de ligar o ufw para não derrubar esta conexão."
-  echo "Rode de novo com ADMIN_CIDR=${ip_peer}/32"
-  exit 1
-fi
+ufw allow 22/tcp
 ufw --force enable
 
 echo
-echo "Base pronta. O Nginx ainda está só em HTTP, de propósito."
+echo "Base pronta. O Nginx ainda está só em HTTP, de propósito, se o certificado não existir."
+echo "A porta 22 está aberta no UFW. Senha de SSH desligada. Fail2Ban: maxretry 4, bantime 24h."
+echo "Usuário de deploy: ${DEPLOY_USER}"
+echo "  chave pública em /home/${DEPLOY_USER}/.ssh/authorized_keys"
+echo "  secret VM_USER do GitHub = ${DEPLOY_USER}"
+echo "  sudo desse usuário só reinicia o serviço projeto-aplicado"
 echo "Próximos passos:"
 echo "  1. sudo python3 ${APP_DIR}/scripts/init_env.py"
 echo "  2. sudo systemctl start projeto-aplicado"
